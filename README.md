@@ -45,12 +45,19 @@ npm run build      # builds client/dist
 npm start          # one Node process serves the client and Socket.IO on $PORT (default 3001)
 ```
 
-Deploy anywhere that supports WebSockets. A `Dockerfile` is included.
+## Deploy on Render (free)
 
-- **Render:** New Web Service, build command `npm install --include=dev && npm run build`, start command `npm start`.
-- **Fly.io:** `fly launch` (uses the Dockerfile), then `fly deploy`.
+The whole app runs as one free Render web service: the same process serves the page and the game server, so there is no CORS or server URL to configure.
 
-Environment variables:
+1. Push this repo to GitHub.
+2. In the Render dashboard choose **New > Blueprint**, pick the repo, and apply. `render.yaml` creates the service with the build and start commands and the health check.
+3. Open `https://<service-name>.onrender.com`. That is the address both players use.
+
+On the free plan, the service sleeps after about 15 minutes without traffic. The next visitor waits 30 to 60 seconds while it wakes up, and the page says so. Rooms are kept in memory, so a redeploy ends any game in progress.
+
+Any other host that supports WebSockets also works. A `Dockerfile` is included.
+
+Environment variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|

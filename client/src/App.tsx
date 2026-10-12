@@ -46,7 +46,11 @@ export default function App() {
 
   return (
     <main className="panel">
-      {!g.connected && <p className="note" role="status">Connecting to server...</p>}
+      {!g.connected && (
+        <p className="note" role="status">
+          Connecting to server... If nobody has played for a while, the free server needs up to a minute to wake up.
+        </p>
+      )}
       {screen()}
     </main>
   );

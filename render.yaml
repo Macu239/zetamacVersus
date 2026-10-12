@@ -1,0 +1,15 @@
+# Render Blueprint: one free web service that serves the built client and Socket.IO.
+# Deploy: Render dashboard > New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: zetamac-versus
+    runtime: node
+    plan: free
+    # --include=dev: the client build needs Vite and TypeScript (devDependencies).
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
