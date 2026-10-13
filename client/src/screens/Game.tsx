@@ -53,7 +53,16 @@ export function Game({ room, playerId, problem, endsAt, countdownEndsAt, pauseEn
     if (window.confirm('Leave now? This forfeits the game.')) onLeave();
   }
 
-  const flash = lastPoint && now - lastPoint.receivedAt < FLASH_MS ? lastPoint : null;
+  const isSet = room.settings.mode === 'set';
+  // In Same set mode the opponent's points never interrupt you: no flash, only the score line updates.
+  const flashVisible = lastPoint && now - lastPoint.receivedAt < FLASH_MS && (!isSet || lastPoint.playerId === playerId);
+  const flash = flashVisible ? lastPoint : null;
+  /**
+   * Formats a score, with progress in Same set mode (progress is always score + 1, since only correct answers advance).
+   * @param score - Problems solved.
+   * @returns Display text.
+   */
+  const scoreText = (score: number) => (isSet ? `${score} (on #${score + 1})` : String(score));
   let flashText = '';
   if (flash) flashText = flash.playerId === playerId ? `You got it: ${flash.answer}` : `${opp?.nickname ?? 'Opponent'} got it: ${flash.answer}`;
 
@@ -65,9 +74,12 @@ export function Game({ room, playerId, problem, endsAt, countdownEndsAt, pauseEn
   return (
     <>
       <div className="topbar">
-        <span role="timer">{room.phase === 'paused' ? 'Paused' : `Seconds left: ${secondsLeft}`}</span>
+        <span role="timer">
+          {room.phase === 'paused' ? 'Paused' : `Seconds left: ${secondsLeft}`}
+          <span className="note"> ({isSet ? 'Same set' : 'Race'})</span>
+        </span>
         <span>
-          Score: you {myScore}, {opp?.nickname ?? 'opponent'} {oppScore}
+          Score: you {scoreText(myScore)}, {opp?.nickname ?? 'opponent'} {scoreText(oppScore)}
         </span>
       </div>
 

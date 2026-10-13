@@ -1,9 +1,11 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
+import { DEFAULT_SETTINGS } from '@zv/shared';
 import type {
   ClientToServerEvents,
   FinishedPayload,
+  GameMode,
   JoinResult,
   PointPayload,
   ProblemPayload,
@@ -82,13 +84,18 @@ function solve(text: string): number {
  * Creates a room with two players and starts a game.
  * @returns Both sockets, their ids, and the first problem each saw.
  */
-async function startedGame() {
+async function startedGame(mode: GameMode = 'race') {
   const a = await client();
   const b = await client();
   const created = await a.emitWithAck('room:create', { nickname: 'Alice', sessionId: 'session-alice' });
   if (!created.ok) throw new Error(created.error);
   const joined = await b.emitWithAck('room:join', { code: created.code.toLowerCase(), nickname: 'Bob', sessionId: 'session-bob' });
   if (!joined.ok) throw new Error(joined.error);
+  if (mode !== 'race') {
+    const applied = next(b, 'room:state', (s) => s.settings.mode === mode);
+    a.emit('settings:update', { ...DEFAULT_SETTINGS, mode });
+    await applied;
+  }
 
   const pa = next(a, 'game:problem');
   const pb = next(b, 'game:problem');
@@ -196,7 +203,7 @@ describe('versus game', () => {
     await b.emitWithAck('room:join', { code: created.code, nickname: 'Bob', sessionId: 'session-bob' });
 
     const err = next(a, 'room:error');
-    a.emit('settings:update', { durationSec: 1 } as never);
+    a.emit('settings:update', { ...DEFAULT_SETTINGS, durationSec: 1 });
     expect((await err).message).toMatch(/Duration/);
 
     const errB = next(b, 'room:error');
@@ -206,5 +213,58 @@ describe('versus game', () => {
     });
     b.emit('settings:update', state.settings);
     expect((await errB).message).toMatch(/host/);
+  });
+});
+
+describe('same set mode', () => {
+  it('gives both players the same first problem', async () => {
+    const { problemA, problemB } = await startedGame('set');
+    expect(problemA.id).toBe(1);
+    expect(problemB.id).toBe(1);
+    expect(problemA.text).toBe(problemB.text);
+  });
+
+  it('advances only the scorer, hides the answer from the opponent, and keeps the sequence shared', async () => {
+    const { a, b, aId, problemA, problemB } = await startedGame('set');
+    const bProblems: ProblemPayload[] = [];
+    b.on('game:problem', (p) => bProblems.push(p));
+
+    const aSecond = next(a, 'game:problem', (p) => p.id === 2);
+    const bPoint = next(b, 'game:point');
+    const aPoint = next(a, 'game:point');
+    a.emit('answer:attempt', { problemId: problemA.id, value: String(solve(problemA.text)) });
+    const [secondA, pointForB, pointForA] = await Promise.all([aSecond, bPoint, aPoint]);
+
+    expect(pointForA.answer).toBe(solve(problemA.text));
+    expect(pointForB.playerId).toBe(aId);
+    expect(pointForB.answer).toBeUndefined();
+    expect(pointForB.scores[aId]).toBe(1);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(bProblems).toHaveLength(0);
+
+    const bSecond = next(b, 'game:problem', (p) => p.id === 2);
+    b.emit('answer:attempt', { problemId: problemB.id, value: String(solve(problemB.text)) });
+    expect((await bSecond).text).toBe(secondA.text);
+  });
+
+  it('ignores answers to a problem the player already passed', async () => {
+    const { a, problemA } = await startedGame('set');
+    const points: PointPayload[] = [];
+    a.on('game:point', (p) => points.push(p));
+    const second = next(a, 'game:problem', (p) => p.id === 2);
+    a.emit('answer:attempt', { problemId: problemA.id, value: String(solve(problemA.text)) });
+    await second;
+    a.emit('answer:attempt', { problemId: problemA.id, value: String(solve(problemA.text)) });
+    await new Promise((r) => setTimeout(r, 80));
+    expect(points).toHaveLength(1);
+  });
+
+  it('finishes on time and the player who solved more wins', async () => {
+    const { a, b, bId, problemB } = await startedGame('set');
+    const finished = next(a, 'game:finished');
+    b.emit('answer:attempt', { problemId: problemB.id, value: String(solve(problemB.text)) });
+    const result = await finished;
+    expect(result.reason).toBe('time');
+    expect(result.winnerId).toBe(bId);
   });
 });

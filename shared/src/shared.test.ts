@@ -116,6 +116,13 @@ describe('validateSettings', () => {
     expect(validateSettings('hello').ok).toBe(false);
   });
 
+  it('accepts both game modes and rejects anything else', () => {
+    expect(validateSettings({ ...DEFAULT_SETTINGS, mode: 'set' }).ok).toBe(true);
+    expect(validateSettings({ ...DEFAULT_SETTINGS, mode: 'solo' }).ok).toBe(false);
+    const { mode: _omit, ...noMode } = DEFAULT_SETTINGS;
+    expect(validateSettings(noMode).ok).toBe(false);
+  });
+
   it('strips unknown fields', () => {
     const res = validateSettings({ ...DEFAULT_SETTINGS, evil: true });
     expect(res.ok && 'evil' in res.settings).toBe(false);

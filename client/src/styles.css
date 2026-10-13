@@ -262,3 +262,7 @@ button:disabled {
   padding: 4px 8px;
   text-align: left;
 }
+
+select {
+  max-width: 100%;
+}

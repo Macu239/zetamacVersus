@@ -2,6 +2,11 @@
 
 Real-time, two-player [Zetamac](https://arithmetic.zetamac.com). Both players see the same problem at the same moment. The first correct answer scores a point, then both players get the next problem.
 
+## Modes
+
+- **Race:** both players see one shared problem. The first correct answer scores, then both move to the next problem.
+- **Same set:** both players get the identical sequence of problems but work through it at their own pace. An opponent's answers never change or clear your problem. You see their score and which problem they're on, but never their answers. Most problems solved wins.
+
 ## Features
 
 - Rooms with a 5-character code, plus an invite link (`/?code=ABCDE`)

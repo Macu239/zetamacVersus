@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { loadNickname } from '../session';
+import { useState, type FormEvent } from "react";
+import { loadNickname } from "../session";
 
 interface HomeProps {
   busy: boolean;
@@ -14,7 +14,12 @@ interface HomeProps {
  * @returns The code or an empty string.
  */
 function codeFromUrl(): string {
-  return new URLSearchParams(window.location.search).get('code')?.toUpperCase().slice(0, 5) ?? '';
+  return (
+    new URLSearchParams(window.location.search)
+      .get("code")
+      ?.toUpperCase()
+      .slice(0, 5) ?? ""
+  );
 }
 
 /**
@@ -25,6 +30,7 @@ function codeFromUrl(): string {
 export function Home({ busy, error, notice, onCreate, onJoin }: HomeProps) {
   const [nickname, setNickname] = useState(loadNickname);
   const [code, setCode] = useState(codeFromUrl);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   /**
    * Submits the join form.
@@ -32,21 +38,69 @@ export function Home({ busy, error, notice, onCreate, onJoin }: HomeProps) {
    */
   function submitJoin(e: FormEvent): void {
     e.preventDefault();
-    if (code.length === 5) onJoin(code, nickname.trim());
+    const name = validateName();
+    if (name && code.length === 5) onJoin(code, nickname.trim());
+  }
+
+  function validateName(): string | null {
+    const name = nickname.trim();
+    if (!name) {
+      setNameError("Please enter a nickname.");
+      document.getElementById("nickname")?.focus();
+      return null;
+    }
+    setNameError(null);
+    return name;
   }
 
   return (
     <>
       <h1>Zetamac Versus</h1>
       <p>
-        A two-player version of the Arithmetic Game. Both players get the same problem at the same time,
-        and whoever answers correctly first scores the point.
+        A two-player version of the Arithmetic Game. In Race mode both players
+        get the same problem at the same time and whoever answers first scores.
+        In Same set mode both get the same list of problems and each works
+        through it at their own pace.
       </p>
-      {notice && <p className="note" role="status">{notice}</p>}
+      {notice && (
+        <p className="note" role="status">
+          {notice}
+        </p>
+      )}
 
       <div className="inline-form">
         <label htmlFor="nickname">Your name:</label>
-        <input id="nickname" type="text" value={nickname} maxLength={16} autoComplete="nickname" placeholder="Player" onChange={(e) => setNickname(e.target.value)} />
+        <input
+          id="nickname"
+          type="text"
+          value={nickname}
+          maxLength={16}
+          autoComplete="nickname"
+          placeholder="Enter your nickname"
+          onChange={(e) => {
+            setNickname(e.target.value);
+            if (nameError) setNameError(null);
+          }}
+        />
+        {nameError && <p id="nickname-error" className="error" role="alert">{nameError}</p>}
+      </div>
+
+      <h2>Start a new room</h2>
+      <p>
+        You become the host and choose the settings. Then send the room code to
+        your opponent.
+      </p>
+      <div className="actions">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            const name = validateName();
+            if (name) onCreate(name);
+          }}
+        >
+          Create room
+        </button>
       </div>
 
       <h2>Join a room</h2>
@@ -61,19 +115,21 @@ export function Home({ busy, error, notice, onCreate, onJoin }: HomeProps) {
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          autoFocus={code !== ''}
-          onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+          autoFocus={code !== ""}
+          onChange={(e) =>
+            setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))
+          }
         />
-        <button type="submit" disabled={busy || code.length !== 5}>Join</button>
+        <button type="submit" disabled={busy || code.length !== 5}>
+          Join
+        </button>
       </form>
 
-      <h2>Start a new room</h2>
-      <p>You become the host and choose the settings. Then send the room code to your opponent.</p>
-      <div className="actions">
-        <button type="button" disabled={busy} onClick={() => onCreate(nickname.trim())}>Create room</button>
-      </div>
-
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
     </>
   );
 }

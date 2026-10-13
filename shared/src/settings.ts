@@ -1,5 +1,6 @@
-import type { GameSettings, RangeSettings } from './types';
+import type { GameMode, GameSettings, RangeSettings } from './types';
 
+export const GAME_MODES: readonly GameMode[] = ['race', 'set'];
 export const DURATION_PRESETS = [30, 60, 120, 300] as const;
 export const MIN_DURATION_SEC = 10;
 export const MAX_DURATION_SEC = 600;
@@ -8,6 +9,7 @@ export const MAX_OPERAND = 10000;
 
 /** Zetamac's default settings. */
 export const DEFAULT_SETTINGS: GameSettings = {
+  mode: 'race',
   durationSec: 120,
   addition: { enabled: true, aMin: 2, aMax: 100, bMin: 2, bMax: 100 },
   subtraction: { enabled: true },
@@ -22,6 +24,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
  */
 export function cloneSettings(settings: GameSettings): GameSettings {
   return {
+    mode: settings.mode,
     durationSec: settings.durationSec,
     addition: { ...settings.addition },
     subtraction: { ...settings.subtraction },
@@ -102,6 +105,10 @@ function readRange(value: unknown, label: string): RangeSettings {
 export function validateSettings(input: unknown): SettingsValidation {
   try {
     if (!isRecord(input)) throw new SettingsError('Settings are missing.');
+    const mode = input.mode;
+    if (typeof mode !== 'string' || !(GAME_MODES as readonly string[]).includes(mode)) {
+      throw new SettingsError('Choose a game mode.');
+    }
     const durationSec = readInt(input, 'durationSec', 'Duration (seconds)', MIN_DURATION_SEC, MAX_DURATION_SEC);
     const addition = readRange(input.addition, 'Addition');
     const multiplication = readRange(input.multiplication, 'Multiplication');
@@ -114,7 +121,7 @@ export function validateSettings(input: unknown): SettingsValidation {
     if (division.enabled && multiplication.aMin < 1) {
       throw new SettingsError('Division uses the first multiplication range as the divisor, so it must start at 1 or higher.');
     }
-    return { ok: true, settings: { durationSec, addition, subtraction, multiplication, division } };
+    return { ok: true, settings: { mode: mode as GameMode, durationSec, addition, subtraction, multiplication, division } };
   } catch (err) {
     if (err instanceof SettingsError) return { ok: false, error: err.message };
     throw err;

@@ -15,8 +15,16 @@ export interface ToggleSettings {
   enabled: boolean;
 }
 
+/**
+ * How the two players share problems.
+ * - race: one shared live problem; the first correct answer scores and both move on.
+ * - set: the same sequence of problems, but each player works through it at their own pace.
+ */
+export type GameMode = 'race' | 'set';
+
 /** Host-adjustable game configuration, modeled on Zetamac's settings page. */
 export interface GameSettings {
+  mode: GameMode;
   durationSec: number;
   addition: RangeSettings;
   /** Reverse of addition: (a + b) - a = b. */
@@ -65,11 +73,11 @@ export interface ProblemPayload {
   remainingMs: number;
 }
 
-/** Sent when a player answers the current problem first. */
+/** Sent when a player scores. In set mode the opponent's copy omits the answer (it would spoil an upcoming problem). */
 export interface PointPayload {
   problemId: number;
   playerId: string;
-  answer: number;
+  answer?: number;
   scores: Record<string, number>;
 }
 

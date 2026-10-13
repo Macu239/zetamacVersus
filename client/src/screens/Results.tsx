@@ -34,6 +34,9 @@ export function Results({ room, playerId, finished, onRematch, onLeave }: Result
       {finished.reason === 'forfeit' && (
         <p>{finished.winnerId === playerId ? 'Your opponent left the game.' : 'You left the game.'}</p>
       )}
+      <p className="note">
+        {room.settings.mode === 'set' ? 'Same set' : 'Race'}, {room.settings.durationSec} seconds
+      </p>
       <p>
         Final score: you {myStats?.score ?? 0}, {oppStats?.nickname ?? 'opponent'} {oppStats?.score ?? 0}.
       </p>

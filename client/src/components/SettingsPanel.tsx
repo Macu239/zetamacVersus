@@ -6,6 +6,7 @@ import {
   OPERATION_SYMBOLS,
   cloneSettings,
   validateSettings,
+  type GameMode,
   type GameSettings,
   type RangeSettings,
 } from '@zv/shared';
@@ -93,6 +94,21 @@ export function SettingsPanel({ settings, editable, onChange }: SettingsPanelPro
     <fieldset className="settings" disabled={!editable}>
       <legend className="sr-only">Game settings</legend>
       {!editable && <p className="note">Only the host can change settings.</p>}
+
+      <div className="op">
+        <div className="duration">
+          <label htmlFor="mode">Mode:</label>
+          <select id="mode" value={settings.mode} onChange={(e) => apply((d) => { d.mode = e.target.value as GameMode; })}>
+            <option value="race">Race: same question, first correct answer scores</option>
+            <option value="set">Same set: same questions, each at your own pace</option>
+          </select>
+        </div>
+        <div className="indent">
+          {settings.mode === 'race'
+            ? 'One shared problem. When either player answers it, both move to the next one.'
+            : 'Both players get the same list of problems but never interrupt each other. Most solved wins.'}
+        </div>
+      </div>
 
       <div className="op">
         <label>

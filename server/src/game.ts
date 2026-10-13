@@ -38,6 +38,18 @@ export const MAX_PLAYERS = 2;
 
 type Timer = ReturnType<typeof setTimeout>;
 
+/**
+ * Checks raw input against a problem's answer.
+ * @param problem - Problem being answered.
+ * @param value - Untrusted input text.
+ * @returns True when the input is exactly the answer.
+ */
+function isCorrect(problem: Problem, value: unknown): boolean {
+  if (typeof value !== 'string' || value.length > 12) return false;
+  const trimmed = value.trim();
+  return /^-?\d+$/.test(trimmed) && Number(trimmed) === problem.answer;
+}
+
 interface Player {
   id: string;
   sessionId: string;
@@ -48,6 +60,10 @@ interface Player {
   wantsRematch: boolean;
   solveTimes: number[];
   graceTimer: Timer | null;
+  /** Set mode: index into the shared problem set of the problem this player is on. */
+  setIndex: number;
+  /** Set mode: when this player's current problem was shown. */
+  shownAt: number;
 }
 
 /**
@@ -60,8 +76,11 @@ export class Room {
   players: Player[] = [];
   lastActivity = Date.now();
 
+  /** Race mode: the shared live problem. */
   private problem: Problem | null = null;
   private problemCounter = 0;
+  /** Set mode: the shared sequence, extended on demand as players advance. */
+  private problemSet: Problem[] = [];
   private problemShownAt = 0;
   private endsAt = 0;
   private remainingMs = 0;
@@ -128,6 +147,8 @@ export class Room {
       wantsRematch: false,
       solveTimes: [],
       graceTimer: null,
+      setIndex: 0,
+      shownAt: 0,
     };
     this.players.push(player);
     if (!this.hostId) this.hostId = player.id;
@@ -159,7 +180,7 @@ export class Room {
     if (this.phase === 'paused' && this.players.every((p) => p.socketId)) {
       this.resume();
     } else {
-      this.sendSnapshot(socket);
+      this.sendSnapshot(player, socket);
     }
     this.broadcastState();
   }
@@ -246,17 +267,17 @@ export class Room {
   }
 
   /**
-   * Checks an answer attempt. The first correct answer for the current problem scores.
+   * Checks an answer attempt. Race: the first correct answer for the shared problem scores.
+   * Set: a correct answer to the player's own current problem scores and advances only that player.
    * @param playerId - Player answering.
    * @param problemId - Problem the client believes is current.
    * @param value - Raw input text.
    */
   attempt(playerId: string, problemId: unknown, value: unknown): void {
+    if (this.phase !== 'playing') return;
+    if (this.settings.mode === 'set') return this.attemptSet(playerId, problemId, value);
     const problem = this.problem;
-    if (this.phase !== 'playing' || !problem || problemId !== problem.id) return;
-    if (typeof value !== 'string' || value.length > 12) return;
-    const trimmed = value.trim();
-    if (!/^-?\d+$/.test(trimmed) || Number(trimmed) !== problem.answer) return;
+    if (!problem || problemId !== problem.id || !isCorrect(problem, value)) return;
     const player = this.findById(playerId);
     if (!player) return;
 
@@ -270,6 +291,34 @@ export class Room {
       scores: this.scores(),
     });
     this.nextProblem();
+  }
+
+  /**
+   * Set mode: checks an answer to the player's own current problem. The opponent's screen is untouched;
+   * they only receive the new scores, without the answer.
+   * @param playerId - Player answering.
+   * @param problemId - 1-based position in the set the client believes it is on.
+   * @param value - Raw input text.
+   */
+  private attemptSet(playerId: string, problemId: unknown, value: unknown): void {
+    const player = this.findById(playerId);
+    if (!player || problemId !== player.setIndex + 1) return;
+    const problem = this.problemSetAt(player.setIndex);
+    if (!isCorrect(problem, value)) return;
+
+    player.score += 1;
+    player.solveTimes.push(Date.now() - player.shownAt);
+    player.setIndex += 1;
+    this.touch();
+    const scores = this.scores();
+    for (const p of this.players) {
+      if (!p.socketId) continue;
+      const point = p.id === player.id
+        ? { problemId: problem.id, playerId: player.id, answer: problem.answer, scores }
+        : { problemId: problem.id, playerId: player.id, scores };
+      this.io.sockets.sockets.get(p.socketId)?.emit('game:point', point);
+    }
+    this.sendSetProblem(player);
   }
 
   /**
@@ -334,12 +383,15 @@ export class Room {
   }
 
   /**
-   * Sends phase-specific state to a socket that just (re)joined.
-   * @param socket - Target socket.
+   * Sends phase-specific state to a player whose socket just (re)joined.
+   * @param player - The player.
+   * @param socket - Their socket.
    */
-  private sendSnapshot(socket: GameSocket): void {
+  private sendSnapshot(player: Player, socket: GameSocket): void {
     if (this.phase === 'countdown') {
       socket.emit('game:countdown', { startsInMs: Math.max(0, this.countdownEndsAt - Date.now()) });
+    } else if (this.phase === 'playing' && this.settings.mode === 'set') {
+      socket.emit('game:problem', this.setPayload(player));
     } else if (this.phase === 'playing' && this.problem) {
       socket.emit('game:problem', this.problemPayload());
     } else if (this.phase === 'finished' && this.lastFinished) {
@@ -396,12 +448,53 @@ export class Room {
       p.score = 0;
       p.solveTimes = [];
       p.wantsRematch = false;
+      p.setIndex = 0;
     }
+    this.problem = null;
+    this.problemSet = [];
     const durationMs = this.options.durationMsOverride ?? this.settings.durationSec * 1000;
     this.endsAt = Date.now() + durationMs;
     this.finishTimer = setTimeout(() => this.finish('time'), durationMs);
     this.broadcastState();
-    this.nextProblem();
+    if (this.settings.mode === 'set') {
+      for (const p of this.players) this.sendSetProblem(p);
+    } else {
+      this.nextProblem();
+    }
+  }
+
+  /**
+   * Set mode: returns problem i of the shared set, generating the set up to i if needed,
+   * so both players walk the identical sequence.
+   * @param index - 0-based position in the set.
+   * @returns The problem at that position.
+   */
+  private problemSetAt(index: number): Problem {
+    while (this.problemSet.length <= index) {
+      const prev = this.problemSet[this.problemSet.length - 1];
+      this.problemSet.push(generateProblem(this.settings, this.problemSet.length + 1, this.options.rng, prev?.text));
+    }
+    return this.problemSet[index];
+  }
+
+  /**
+   * Set mode: the player's current problem without its answer.
+   * @param player - The player.
+   * @returns Problem payload; its id is the 1-based position in the set.
+   */
+  private setPayload(player: Player): ProblemPayload {
+    const problem = this.problemSetAt(player.setIndex);
+    return { id: problem.id, text: problem.text, remainingMs: Math.max(0, this.endsAt - Date.now()) };
+  }
+
+  /**
+   * Set mode: sends a player their own current problem and starts their solve timer.
+   * @param player - The player.
+   */
+  private sendSetProblem(player: Player): void {
+    player.shownAt = Date.now();
+    if (!player.socketId) return;
+    this.io.sockets.sockets.get(player.socketId)?.emit('game:problem', this.setPayload(player));
   }
 
   /** Deals a new shared problem to both players. */
@@ -434,6 +527,10 @@ export class Room {
     this.phase = 'playing';
     this.endsAt = Date.now() + this.remainingMs;
     this.finishTimer = setTimeout(() => this.finish('time'), this.remainingMs);
+    if (this.settings.mode === 'set') {
+      for (const p of this.players) this.sendSetProblem(p);
+      return;
+    }
     this.problemShownAt = Date.now();
     if (this.problem) this.io.to(this.code).emit('game:problem', this.problemPayload());
   }
